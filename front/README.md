@@ -125,7 +125,7 @@ Content-Type: application/json
       ],
       "detailedReport": {
         "title": "정상 단계",
-        "content": "보행 안정성이 양호한 상태입니다..."
+        "content": "보행 안정성이 양호한 상태입니다... ~ 진단 내용 작성"
       }
     }
   }

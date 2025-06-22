@@ -894,7 +894,7 @@ async def pipeline_info():
     """최적화된 파이프라인 정보 엔드포인트"""
     return {
         "pipeline": "Optimized LangGraph 12-stage gait analysis",
-        "version": "2.0.0",
+        "version": "2.2.0",
         "architecture": "hybrid",
         "stages": 12,
         "optimization": {
@@ -940,8 +940,9 @@ if __name__ == "__main__":
     print()
     print("🎯 최종 배포용 하이브리드 파이프라인 v2.1.0")
     print("📊 67% 최적화: 8/12 노드 LLM 제거 (순수 Python + 딥러닝)")
-    print("🧠 4/12 노드 LLM 사용 (진단 전용)")
+    print("🧠 4/12 노드 LLM 사용 (RAG 기반 진단 전용)")
     print("🏗️ 완전 독립형: test_actual_nodes_pipeline.py 의존성 제거")
+    print("✨ RAG 구조화된 응답 파싱 시스템 적용 (환각 최소화)")
     print(f"🔧 백그라운드 워커: {executor._max_workers}개")
     print("⚡ 데이터 처리: 즉시 실행 | 🧠 진단: LLM 기반")
     print("🛡️ 스레드 안전성: 동시성 이슈 방지")
