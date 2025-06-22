@@ -1,0 +1,24 @@
+{
+  "name": "WALKerHOLIC",
+  "short_name": "WALKerHOLIC",
+  "description": "보행 분석 애플리케이션",
+  "start_url": "/",
+  "display": "fullscreen",
+  "background_color": "#CAD6FF",
+  "theme_color": "#2260FF",
+  "orientation": "portrait",
+  "scope": "/",
+  "prefer_related_applications": false,
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "categories": ["health", "medical"],
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+} 

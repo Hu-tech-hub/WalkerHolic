@@ -1,0 +1,219 @@
+/* Google Fonts 추가 */
+@import url('https://fonts.googleapis.com/css2?family=Lilita+One&family=League+Spartan:wght@100;300;400;500;600;700;800&family=Noto+Sans+KR:wght@100;300;400;500;600;700;900&family=Noto+Emoji:wght@300;400;500;600;700&family=Pretendard:wght@100;200;300;400;500;600;700;800;900&family=Mulish:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 전역 스타일 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+
+/* 모바일 앱 느낌을 위한 기본 스타일 */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  touch-action: pan-x pan-y;
+  -webkit-tap-highlight-color: transparent;
+  /* 모바일 웹에서 전체 화면 활용 */
+  width: 100vw;
+  height: 100vh;
+  height: calc(var(--vh, 1vh) * 100); /* 동적 뷰포트 높이 */
+  position: fixed;
+  top: 0;
+  left: 0;
+  margin: 0;
+  padding: 0;
+  /* iOS 전체 화면 활용 */
+  overflow: hidden;
+  -webkit-overflow-scrolling: touch;
+  
+  /* iOS Safe Area 전체 화면 활용 */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  
+  /* 사용자 선택 방지 */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  
+  /* 터치 동작 최적화 */
+  -webkit-touch-callout: none;
+}
+
+/* 뷰포트 설정 */
+#root {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for mobile */
+  position: relative;
+  /* iOS Safe Area 전체 화면 활용 */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* 스크롤바 숨기기 */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* 모바일 웹 최적화 */
+@media screen and (max-width: 768px) {
+  html, body {
+    height: 100vh;
+    height: 100dvh;
+    height: -webkit-fill-available;
+  }
+  
+  #root {
+    height: 100vh;
+    height: 100dvh;
+    height: -webkit-fill-available;
+  }
+  
+  /* iOS PWA 전체 화면 최적화 */
+  body {
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-text-size-adjust: none;
+  }
+}
+
+/* 커스텀 폰트 클래스 */
+.font-lilita {
+  font-family: 'Lilita One', cursive;
+}
+
+.font-league-spartan {
+  font-family: 'League Spartan', sans-serif;
+}
+
+.font-noto-sans {
+  font-family: 'Noto Sans KR', sans-serif;
+}
+
+.font-noto-emoji {
+  font-family: 'Noto Emoji', sans-serif;
+}
+
+.font-pretendard {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+}
+
+.font-mulish {
+  font-family: 'Mulish', sans-serif;
+}
+
+.font-inter {
+  font-family: 'Inter', sans-serif;
+}
+
+/* PWA 전용 스타일 */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  /* iOS PWA에서 전체 화면 활용 - 앱 색상이 상단까지 확장 */
+  body {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  #root {
+    padding: 0 !important;
+    margin: 0 !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    /* 전체 화면 사용, Safe Area는 내부 콘텐츠에서 처리 */
+  }
+  
+  /* 메인 페이지 컨테이너가 전체 화면을 차지하도록 */
+  .main-container {
+    padding-top: env(safe-area-inset-top) !important;
+    padding-bottom: env(safe-area-inset-bottom) !important;
+    padding-left: env(safe-area-inset-left) !important;
+    padding-right: env(safe-area-inset-right) !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
+  }
+  
+  /* 앱의 모든 페이지 컨테이너에 적용 */
+  .page-container {
+    padding-top: env(safe-area-inset-top) !important;
+    padding-bottom: env(safe-area-inset-bottom) !important;
+    padding-left: env(safe-area-inset-left) !important;
+    padding-right: env(safe-area-inset-right) !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
+  }
+}
+
+/* 메인 컨테이너 최적화 */
+.main-container {
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  
+  /* Safe Area 내에서만 콘텐츠 표시 */
+  padding-top: max(env(safe-area-inset-top), 0px);
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  box-sizing: border-box;
+}
+
+/* iOS 상태바 대응 */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .main-container {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* PWA 전용 스타일 */
+@media (display-mode: fullscreen) {
+  body {
+    background-color: #CAD6FF;
+  }
+}
+
+@media (display-mode: standalone) {
+  body {
+    background-color: #CAD6FF;
+  }
+}
+
+/* 로그인 페이지 PWA 최적화 */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .page-container {
+    /* 최소 좌우 여백 보장 */
+    padding-left: calc(max(env(safe-area-inset-left), 16px) + 20px) !important;
+    padding-right: calc(max(env(safe-area-inset-right), 16px) + 20px) !important;
+  }
+}
+
+/* 작은 화면에서 추가 여백 */
+@media screen and (max-width: 375px) {
+  .page-container {
+    padding-left: calc(max(env(safe-area-inset-left), 20px) + 16px) !important;
+    padding-right: calc(max(env(safe-area-inset-right), 20px) + 16px) !important;
+  }
+}

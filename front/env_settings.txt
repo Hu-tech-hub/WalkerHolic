@@ -1,0 +1,31 @@
+# .env 파일에 추가해야 할 설정
+
+# 백엔드 API 서버 URL 설정
+VITE_API_BASE_URL=http://localhost:8080/api
+
+# 개발 환경에서 사용할 API URL
+# VITE_API_BASE_URL=http://dev-api.walkerholic.com/api
+
+# 프로덕션 환경에서 사용할 API URL  
+# VITE_API_BASE_URL=https://api.walkerholic.com/api
+
+# API 타임아웃 설정 (밀리초)
+VITE_API_TIMEOUT=10000
+
+# Supabase 설정 (낙상 감지 기능)
+# ⚠️ 중요: 반드시 anon key를 사용하세요! service_role key 사용 금지!
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
+
+# 🔍 API Key 구분하는 방법:
+# ✅ anon key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc... (role: "anon")
+# ❌ service_role key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc... (role: "service_role")
+# 
+# Supabase 대시보드 → Settings → API에서 확인:
+# - anon public: 프론트엔드에서 사용 (안전)
+# - service_role: 백엔드에서만 사용 (위험) 
+
+# 🛡️ 보안 참고사항:
+# - service_role key는 모든 권한을 가지므로 프론트엔드에서 절대 사용 금지
+# - anon key는 RLS(Row Level Security) 정책에 의해 제한됨
+# - 실제 .env 파일은 .gitignore에 추가하여 Git에 업로드하지 않도록 주의 
