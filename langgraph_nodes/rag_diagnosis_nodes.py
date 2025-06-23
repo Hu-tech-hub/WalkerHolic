@@ -21,8 +21,30 @@ from langchain.schema import Document
 import os
 from dotenv import load_dotenv
 
-from .base_node import BaseNode
-from .graph_state import GraphState, StateManager, PipelineStages
+# Conditional imports to handle both module and script execution
+try:
+    # Try relative imports first (when run as module)
+    from .base_node import BaseNode
+    from .graph_state import GraphState, StateManager, PipelineStages
+except ImportError:
+    # Fall back to absolute imports (when run as script)
+    import sys
+    from pathlib import Path
+    
+    # Add the parent directory to sys.path so we can import from langgraph_nodes
+    current_dir = Path(__file__).parent
+    parent_dir = current_dir.parent
+    if str(parent_dir) not in sys.path:
+        sys.path.insert(0, str(parent_dir))
+    
+    # Now try absolute imports
+    try:
+        from langgraph_nodes.base_node import BaseNode
+        from langgraph_nodes.graph_state import GraphState, StateManager, PipelineStages
+    except ImportError as e:
+        print(f"Error: Could not import required modules: {e}")
+        print("Make sure you're running this from the correct directory or as a module.")
+        sys.exit(1)
 
 # Load environment variables
 load_dotenv()
