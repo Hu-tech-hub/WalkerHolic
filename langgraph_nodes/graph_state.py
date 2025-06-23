@@ -37,7 +37,18 @@ class GraphState(TypedDict):
     metrics_record_id: Optional[int]
     metrics_stored: Optional[bool]
     
-    # Diagnosis and Response
+    # 2-Stage RAG System Fields
+    rag_query_stage1: Optional[str]  # Stage 1: Individual indicator analysis query
+    rag_query_stage2_template: Optional[str]  # Stage 2: Overall assessment template
+    patient_info: Optional[Dict[str, Any]]  # Patient information for RAG
+    metrics_data: Optional[Dict[str, float]]  # Formatted metrics for RAG
+    stage1_indicators: Optional[List[Dict[str, Any]]]  # Stage 1 analysis results
+    stage1_response: Optional[str]  # Raw Stage 1 LLM response
+    stage1_source_info: Optional[List[Dict[str, Any]]]  # Stage 1 retrieved documents info
+    diagnosis_result: Optional[Dict[str, Any]]  # Final combined diagnosis result
+    rag_diagnosis_completed: Optional[bool]  # RAG diagnosis completion flag
+    
+    # Legacy Diagnosis Fields (for backward compatibility)
     prompt_str: Optional[str]
     medical_diagnosis: Optional[str]
     medical_diagnosis_metadata: Optional[Dict[str, Any]]
@@ -46,6 +57,7 @@ class GraphState(TypedDict):
     
     # Final Output
     response: Optional[Dict[str, Any]]
+    final_response: Optional[Dict[str, Any]]  # Alternative final response field
     
     # Error Handling
     error: Optional[str]
@@ -80,12 +92,22 @@ class StateManager:
             gait_metrics=None,
             metrics_record_id=None,
             metrics_stored=None,
+            rag_query_stage1=None,
+            rag_query_stage2_template=None,
+            patient_info=None,
+            metrics_data=None,
+            stage1_indicators=None,
+            stage1_response=None,
+            stage1_source_info=None,
+            diagnosis_result=None,
+            rag_diagnosis_completed=None,
             prompt_str=None,
             medical_diagnosis=None,
             medical_diagnosis_metadata=None,
             diagnosis_record_id=None,
             diagnosis_stored=None,
             response=None,
+            final_response=None,
             error=None,
             error_type=None,
             processing_time=0.0,

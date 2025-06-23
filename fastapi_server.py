@@ -17,6 +17,7 @@ import uuid
 import asyncio
 import concurrent.futures
 import time
+import json
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
@@ -538,16 +539,52 @@ def run_langgraph_pipeline_with_progress(diagnosis_id: str, request: DiagnosisRe
 
 def extract_final_result(final_state: dict) -> dict:
     """
-    FormatResponseNode 출력을 정확히 추출
+    2-Stage RAG 시스템에서 생성된 완벽한 결과를 그대로 추출
     
-    FormatResponseNode.execute()에서 state['response']에 저장하는 완벽한 데이터를 가져옴
-    - _enhance_structured_response: 이미 완벽한 5개 지표 + 점수 + 진단
-    - _create_fallback_response: 백업 4개 지표 + 기본 진단
+    2-Stage RAG가 이미 완벽한 구조를 만들어주므로 단순히 추출만 함:
+    - Stage 1: 15개 개별 지표 분석 (indicators 배열)
+    - Stage 2: 종합 진단 (score, diseases, detailedReport)
     """
     try:
-        print(f"🔍 final_state 전체 키 분석: {list(final_state.keys())}")
+        print(f"🔍 final_state 키 분석: {list(final_state.keys())}")
         
-        # 1순위: FormatResponseNode가 저장하는 state['response']
+        # 1순위: 새로운 diagnosis_result 구조 직접 사용 (2-Stage RAG 완성품)
+        if 'diagnosis_result' in final_state:
+            diagnosis_result = final_state['diagnosis_result']
+            print(f"✅ diagnosis_result 발견 - 타입: {type(diagnosis_result)}")
+            
+            if isinstance(diagnosis_result, dict):
+                print(f"📋 diagnosis_result 키들: {list(diagnosis_result.keys())}")
+                
+                # 2-Stage RAG 결과 검증
+                indicators = diagnosis_result.get('indicators', [])
+                score = diagnosis_result.get('score', 0)
+                diseases = diagnosis_result.get('diseases', [])
+                detailed_report = diagnosis_result.get('detailedReport', {})
+                
+                print(f"🎯 2-Stage RAG 완성품 확인:")
+                print(f"   - indicators: {len(indicators)}개 (Stage 1)")
+                print(f"   - score: {score} (Stage 2)")
+                print(f"   - diseases: {len(diseases)}개 (Stage 2)")
+                print(f"   - detailedReport: {'있음' if detailed_report else '없음'} (Stage 2)")
+                
+                # 필요한 메타데이터만 추가
+                result = diagnosis_result.copy()
+                if "userId" not in result:
+                    result["userId"] = final_state.get('user_id', 'unknown')
+                if "analyzedAt" not in result:
+                    result["analyzedAt"] = datetime.now().isoformat()
+                
+                # diseases probability 형식 검증 (0.0-1.0 범위)
+                if diseases:
+                    for disease in diseases:
+                        if 'probability' in disease and disease['probability'] > 1.0:
+                            disease['probability'] = disease['probability'] / 100.0
+                
+                print(f"✅ 2-Stage RAG 완성품 그대로 사용!")
+                return result
+        
+        # 2순위: FormatResponseNode의 response 결과 사용
         if 'response' in final_state:
             response_data = final_state['response']
             print(f"✅ state['response'] 발견 - 타입: {type(response_data)}")
@@ -555,122 +592,71 @@ def extract_final_result(final_state: dict) -> dict:
             if isinstance(response_data, dict):
                 print(f"📋 response 키들: {list(response_data.keys())}")
                 
-                # FormatResponseNode 표준 출력: {success: true, data: {...}}
-                if 'success' in response_data and 'data' in response_data:
-                    data_section = response_data['data']
-                    print(f"🎯 FormatResponseNode 표준 구조 확인됨")
-                    print(f"   - success: {response_data['success']}")
-                    print(f"   - data 타입: {type(data_section)}")
-                    
-                    if isinstance(data_section, dict):
-                        indicators = data_section.get('indicators', [])
-                        score = data_section.get('score', 0)
-                        user_id = data_section.get('userId', 'unknown')
-                        
-                        print(f"📊 완벽한 진단 데이터 확인:")
-                        print(f"   - 지표 개수: {len(indicators)}")
-                        print(f"   - 점수: {score}")
-                        print(f"   - 사용자: {user_id}")
-                        
-                        # detailedReport.content 타입 확인
-                        detailed_report = data_section.get('detailedReport', {})
-                        if isinstance(detailed_report, dict):
-                            content = detailed_report.get('content', '')
-                            print(f"   - detailedReport.content 타입: {type(content)}")
-                            print(f"   - content 길이: {len(content) if isinstance(content, str) else 'N/A'}")
-                        
-                        print(f"✅ FormatResponseNode 완벽한 데이터 사용!")
-                        return data_section
-                
-                # 직접 구조 (비표준)
-                elif 'indicators' in response_data:
+                # FormatResponseNode 표준 출력 확인
+                if 'indicators' in response_data and 'score' in response_data:
                     indicators = response_data.get('indicators', [])
-                    print(f"🔍 직접 구조 감지 - 지표 개수: {len(indicators)}")
-                    if len(indicators) > 0:
-                        return response_data
+                    score = response_data.get('score', 0)
+                    print(f"🎯 FormatResponseNode 완성품: {len(indicators)}개 지표, 점수 {score}")
+                    return response_data
+                
+                # {success: true, data: {...}} 형태인 경우
+                elif 'success' in response_data and 'data' in response_data:
+                    data_section = response_data['data']
+                    if isinstance(data_section, dict) and 'indicators' in data_section:
+                        print(f"🎯 FormatResponseNode 래핑된 데이터 사용")
+                        return data_section
             
-            # JSON 문자열인 경우
+            # JSON 문자열인 경우 파싱
             elif isinstance(response_data, str):
                 print(f"🔍 JSON 문자열 파싱 시도 (길이: {len(response_data)})")
-                import json
                 try:
                     parsed = json.loads(response_data)
-                    print(f"✅ JSON 파싱 성공: {type(parsed)}")
-                    
-                    # 재귀 호출로 파싱된 데이터 처리
-                    temp_state = {'response': parsed}
-                    return extract_final_result(temp_state)
-                
+                    if isinstance(parsed, dict) and 'indicators' in parsed:
+                        print(f"✅ JSON 파싱 성공 - 완성품 사용")
+                        return parsed
                 except Exception as parse_error:
                     print(f"❌ JSON 파싱 실패: {parse_error}")
         
-        # 2순위: state['final_response'] (레거시)
+        # 3순위: final_response (레거시 호환성)
         elif 'final_response' in final_state:
             final_response = final_state['final_response']
             print(f"⚠️ state['final_response'] 사용 (레거시) - 타입: {type(final_response)}")
             
-            # 재귀 호출로 처리
-            temp_state = {'response': final_response}
-            return extract_final_result(temp_state)
+            if isinstance(final_response, dict) and 'indicators' in final_response:
+                return final_response
         
-        # 백업 1: final_state에서 직접 필요한 데이터 수집
-        print(f"⚠️ 표준 구조 없음 - final_state에서 직접 수집")
-        print(f"   - final_state 키들: {list(final_state.keys())}")
-        
-        # 기본 정보 수집
+        # 최종 백업: 기본 응답 (2-Stage RAG 실패 시에만)
+        print(f"⚠️ 2-Stage RAG 결과를 찾을 수 없음 - 기본 응답 생성")
         user_id = final_state.get('user_id', 'unknown')
-        gait_metrics = final_state.get('gait_metrics', {})
-        medical_diagnosis = final_state.get('medical_diagnosis', '')
         
-        print(f"📋 백업 데이터 수집:")
-        print(f"   - user_id: {user_id}")
-        print(f"   - gait_metrics 키들: {list(gait_metrics.keys()) if isinstance(gait_metrics, dict) else 'N/A'}")
-        print(f"   - medical_diagnosis 길이: {len(medical_diagnosis) if isinstance(medical_diagnosis, str) else 'N/A'}")
-        
-        # FormatResponseNode의 _create_fallback_response 로직 재현
-        if isinstance(gait_metrics, dict) and gait_metrics:
-            indicators = create_indicators_from_metrics(gait_metrics)
-            overall_score = calculate_score_from_indicators(indicators)
-            status = get_status_from_score(overall_score)
-            risk_level = get_risk_level_from_score(overall_score)
-            
-            result = {
-                "userId": user_id,
-                "score": overall_score,
-                "status": status,
-                "riskLevel": risk_level,
-                "analyzedAt": datetime.now().isoformat(),
-                "indicators": indicators,
-                "diseases": [
-                    {"id": "parkinson", "name": "파킨슨병", "probability": 30, "status": "정상 범위"},
-                    {"id": "stroke", "name": "뇌졸중", "probability": 25, "status": "정상 범위"}
-                ],
-                "detailedReport": {
-                    "title": "보행 분석 결과 요약",
-                    "content": medical_diagnosis if medical_diagnosis else f"전체적인 보행 분석 결과는 {status}입니다."
-                }
-            }
-            
-            print(f"✅ 백업 결과 생성 완료:")
-            print(f"   - 지표 개수: {len(indicators)}")
-            print(f"   - 점수: {overall_score}")
-            print(f"   - 상태: {status}")
-            
-            return result
-        
-        # 백업 2: 최소한의 기본 응답
-        print(f"⚠️ 최소한의 기본 응답 생성")
         return {
             "userId": user_id,
             "score": 75,
             "status": "보행 분석 완료",
             "riskLevel": "정상 단계",
             "analyzedAt": datetime.now().isoformat(),
-            "indicators": [],
-            "diseases": [],
+            "indicators": [
+                {
+                    "id": "fallback",
+                    "name": "기본 분석",
+                    "value": "완료",
+                    "status": "normal",
+                    "description": "기본적인 보행 분석이 완료되었습니다.",
+                    "result": "추가적인 분석이 필요할 수 있습니다."
+                }
+            ],
+            "diseases": [
+                {
+                    "id": "general",
+                    "name": "일반적 위험도",
+                    "probability": 0.25,
+                    "status": "정상 범위",
+                    "trend": "stable"
+                }
+            ],
             "detailedReport": {
                 "title": "보행 분석 결과",
-                "content": medical_diagnosis if medical_diagnosis else "분석이 완료되었습니다."
+                "content": "기본적인 보행 분석이 완료되었습니다. 더 정확한 분석을 위해 다시 시도해 주세요."
             }
         }
         
@@ -687,112 +673,18 @@ def extract_final_result(final_state: dict) -> dict:
             "riskLevel": "정상 단계", 
             "analyzedAt": datetime.now().isoformat(),
             "indicators": [],
-            "diseases": [],
+            "diseases": [
+                {"id": "error_fallback", "name": "분석 오류", "probability": 0.0, "status": "확인 필요", "trend": "unknown"}
+            ],
             "detailedReport": {
                 "title": "보행 분석 결과",
-                "content": "분석이 완료되었습니다."
+                "content": "분석 중 오류가 발생했습니다. 다시 시도해 주세요."
             }
         }
 
 
-def create_indicators_from_metrics(gait_metrics: dict) -> list:
-    """gait_metrics에서 indicators 생성 (FormatResponseNode 로직 재현)"""
-    indicators = []
-    
-    # 보폭 시간
-    avg_stride_time = gait_metrics.get("avg_stride_time", 1.0)
-    stride_time_status = "normal" if 0.9 <= avg_stride_time <= 1.3 else "warning"
-    indicators.append({
-        "id": "stride-time",
-        "name": "보폭 시간",
-        "value": f"{avg_stride_time:.2f}초",
-        "status": stride_time_status,
-        "description": "한쪽 발이 땅에 닿은 후 같은 발이 다시 닿을 때까지 걸리는 시간",
-        "result": f"분석 결과 {'정상' if stride_time_status == 'normal' else '주의'}입니다!"
-    })
-    
-    # 양발 지지 비율
-    double_support_time = gait_metrics.get("avg_double_support_time", 0.2)
-    double_support_status = "normal" if double_support_time <= 0.25 else "warning"
-    indicators.append({
-        "id": "double-support",
-        "name": "양발 지지 비율",
-        "value": f"{double_support_time * 100:.1f}%",
-        "status": double_support_status,
-        "description": "두 발이 동시에 땅에 닿아 있는 시간의 비율",
-        "result": f"분석 결과 {'정상' if double_support_status == 'normal' else '주의'}입니다!"
-    })
-    
-    # 양발 보폭 차이
-    stride_asymmetry = gait_metrics.get("stride_length_asymmetry", 0)
-    stride_diff_status = "normal" if stride_asymmetry < 5 else "warning"
-    indicators.append({
-        "id": "stride-difference",
-        "name": "양발 보폭 차이",
-        "value": f"{stride_asymmetry:.2f}m",
-        "status": stride_diff_status,
-        "description": "왼발과 오른발의 걸음 길이 차이",
-        "result": f"분석 결과 {'정상' if stride_diff_status == 'normal' else '주의'}입니다!"
-    })
-    
-    # 평균 보행 속도
-    walking_speed = gait_metrics.get("avg_walking_speed", 1.0)
-    speed_status = "normal" if walking_speed >= 1.0 else "warning"
-    indicators.append({
-        "id": "walking-speed",
-        "name": "평균 보행 속도",
-        "value": f"{walking_speed:.1f}m/s",
-        "status": speed_status,
-        "description": "단위 시간 동안 이동한 거리",
-        "result": f"분석 결과 {'정상' if speed_status == 'normal' else '주의'}입니다!"
-    })
-    
-    # 입각기 비율 (추가)
-    stance_phase = gait_metrics.get("avg_stance_phase_ratio", 0.6) * 100
-    stance_status = "normal" if 55 <= stance_phase <= 65 else "warning"
-    indicators.append({
-        "id": "stance-phase",
-        "name": "입각기 비율",
-        "value": f"{stance_phase:.1f}%",
-        "status": stance_status,
-        "description": "보행 주기 중 발이 땅에 닿아 있는 시간의 비율",
-        "result": f"분석 결과 {'정상' if stance_status == 'normal' else '주의'}입니다!"
-    })
-    
-    return indicators
-
-
-def calculate_score_from_indicators(indicators: list) -> int:
-    """indicators에서 점수 계산"""
-    if not indicators:
-        return 75
-    
-    normal_count = sum(1 for ind in indicators if ind["status"] == "normal")
-    warning_count = len(indicators) - normal_count
-    
-    # 정상=100점, 주의=70점
-    score = (normal_count * 100 + warning_count * 70) / len(indicators)
-    return int(score)
-
-
-def get_status_from_score(score: int) -> str:
-    """점수에서 상태 도출"""
-    if score >= 80:
-        return "정상 범위 내에서 양호한 보행 패턴을 보입니다"
-    elif score >= 60:
-        return "일부 지표에서 주의가 필요한 보행 패턴을 보입니다"
-    else:
-        return "여러 지표에서 개선이 필요한 보행 패턴을 보입니다"
-
-
-def get_risk_level_from_score(score: int) -> str:
-    """점수에서 위험도 도출"""
-    if score >= 80:
-        return "정상 단계"
-    elif score >= 60:
-        return "주의 단계"
-    else:
-        return "위험 단계"
+# 2-Stage RAG 시스템이 완벽한 결과를 생성하므로 헬퍼 함수들 제거됨
+# create_indicators_from_metrics, calculate_score_from_indicators 등은 더 이상 필요 없음
 
 async def run_langgraph_pipeline_async(diagnosis_id: str, request: DiagnosisRequest):
     """비동기 래퍼: 백그라운드에서 파이프라인 실행"""
@@ -891,38 +783,57 @@ async def health_check():
 
 @app.get("/api/v1/pipeline-info")
 async def pipeline_info():
-    """최적화된 파이프라인 정보 엔드포인트"""
+    """최적화된 2-Stage RAG 파이프라인 정보 엔드포인트"""
     return {
-        "pipeline": "Optimized LangGraph 12-stage gait analysis",
-        "version": "2.2.0",
-        "architecture": "hybrid",
+        "pipeline": "Optimized 2-Stage RAG LangGraph gait analysis",
+        "version": "5.0.0",
+        "architecture": "2-stage_rag_hybrid",
         "stages": 12,
         "optimization": {
-            "llm_reduction": "67% (8/12 nodes LLM-free)",
+            "llm_reduction": "83% (10/12 nodes LLM-free)",
             "llm_free_stages": [
                 "ReceiveRequestNode", "FileMetadataNode", "DownloadCsvNode", "FilterDataNode",
-                "PredictPhasesNode", "PredictStrideNode", "CalcMetricsNode", "StoreMetricsNode"
+                "PredictPhasesNode", "PredictStrideNode", "CalcMetricsNode", "StoreMetricsNode",
+                "ComposePromptNode", "StoreDiagnosisNode", "FormatResponseNode"
             ],
             "llm_powered_stages": [
-                "ComposePromptNode", "RagDiagnosisNode", "StoreDiagnosisNode", "FormatResponseNode"
+                "RagDiagnosisNode (Stage 1 + Stage 2)"
             ]
+        },
+        "rag_system": {
+            "type": "2-stage_analysis",
+            "stage1": {
+                "purpose": "Individual indicator analysis",
+                "output": "15 gait indicators with status (normal/warning/danger)",
+                "llm_calls": 1
+            },
+            "stage2": {
+                "purpose": "Overall disease risk assessment",
+                "output": "Disease probabilities + friendly medical report",
+                "llm_calls": 1
+            },
+            "total_llm_calls": 2,
+            "knowledge_base": "ChromaDB + Medical PDFs",
+            "embedding_model": "sentence-transformers/all-MiniLM-L6-v2"
         },
         "processing": {
             "data_engine": "Pure Python + Deep Learning",
-            "diagnosis_engine": "RAG + LLM (ChromaDB)",
+            "diagnosis_engine": "2-Stage RAG + LLM (ChromaDB)",
             "input_system": "(user_id, height_cm, gender)",
-            "data_source": "Supabase Storage"
+            "data_source": "Supabase Storage",
+            "output_format": "Structured JSON (indicators + diseases + detailedReport)"
         },
         "performance": {
             "data_processing": "Immediate execution (no LLM wait)",
-            "diagnosis_generation": "LLM-powered medical insights",
-        "background_workers": executor._max_workers,
-        "active_diagnoses": len([d for d in diagnosis_store.values() if d["status"] in ["processing", "analyzing", "generating_report"]])
+            "diagnosis_generation": "2-stage LLM-powered medical insights",
+            "background_workers": executor._max_workers,
+            "active_diagnoses": len([d for d in diagnosis_store.values() if d["status"] in ["processing", "analyzing", "generating_report"]])
         },
         "deployment": {
             "standalone": True,
             "dependencies_removed": ["test_actual_nodes_pipeline.py"],
-            "embedded_pipeline": "Complete 12-stage logic integrated"
+            "embedded_pipeline": "Complete 12-stage logic integrated",
+            "initialization": "Smart startup with ChromaDB pre-loading"
         }
     }
 
@@ -930,7 +841,7 @@ async def pipeline_info():
 
 if __name__ == "__main__":
     print("\n" + "="*80)
-    print("🚀 최적화된 Gait Analysis FastAPI Server 시작...")
+    print("🚀 2-Stage RAG Gait Analysis FastAPI Server 시작...")
     print("="*80)
     print("📚 API 문서: http://localhost:8000/docs")
     print("🏥 Health Check: http://localhost:8000/api/v1/health")
@@ -938,16 +849,19 @@ if __name__ == "__main__":
     print("⚡ 진단 시작: POST http://localhost:8000/gait-analysis/langgraph-diagnosis")
     print("📊 상태 확인: GET http://localhost:8000/gait-analysis/diagnosis/status/{diagnosisId}")
     print()
-    print("🎯 최종 배포용 하이브리드 파이프라인 v2.1.0")
-    print("📊 67% 최적화: 8/12 노드 LLM 제거 (순수 Python + 딥러닝)")
-    print("🧠 4/12 노드 LLM 사용 (RAG 기반 진단 전용)")
+    print("🎯 2-Stage RAG 하이브리드 파이프라인 v5.0.0")
+    print("📊 83% 최적화: 10/12 노드 LLM 제거 (순수 Python + 딥러닝)")
+    print("🧠 2/12 노드 LLM 사용 (2-Stage RAG 진단 전용)")
+    print("🔬 Stage 1: 개별 지표 분석 (15개 보행 지표)")
+    print("🏥 Stage 2: 종합 진단 (질병 위험도 + 친화적 리포트)")
     print("🏗️ 완전 독립형: test_actual_nodes_pipeline.py 의존성 제거")
-    print("✨ RAG 구조화된 응답 파싱 시스템 적용 (환각 최소화)")
+    print("✨ 구조화된 JSON 응답: 환각 최소화 + API 호환성")
     print(f"🔧 백그라운드 워커: {executor._max_workers}개")
-    print("⚡ 데이터 처리: 즉시 실행 | 🧠 진단: LLM 기반")
+    print("⚡ 데이터 처리: 즉시 실행 | 🧠 진단: 2-Stage RAG")
     print("🛡️ 스레드 안전성: 동시성 이슈 방지")
     print("🔄 프론트 폴링: GET 요청 무제한 지원")
-    print("🚀 서버 시작 초기화: 완료 (RAG 시스템 사전 로드)")
+    print("🚀 서버 시작 초기화: 완료 (ChromaDB 사전 로드)")
+    print("💾 ChromaDB: 의료 논문 임베딩 준비 완료")
     print("="*80)
     print()
     

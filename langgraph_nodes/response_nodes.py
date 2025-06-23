@@ -20,589 +20,95 @@ load_dotenv()
 class FormatResponseNode(BaseNode):
     """
     Node 12: Format final response JSON and cleanup temporary files
-    Integrates gait metrics, diagnosis, and metadata into final output
+    Optimized for 2-Stage RAG diagnosis_result structure
     """
     
     def __init__(self):
         super().__init__(PipelineStages.FORMAT_RESPONSE)
     
-    def get_system_prompt(self) -> str:
-        return """You are a medical report formatting specialist.
-        
-        Your task is to create a comprehensive, well-structured JSON response that combines:
-        - Gait analysis metrics
-        - Medical diagnosis from RAG system
-        - Processing metadata
-        - Quality indicators
-        
-        The response should be professional, clear, and suitable for healthcare providers.
-        Structure the data logically with proper categorization and include confidence levels
-        where applicable.
-        
-        Ensure all numerical values are properly formatted and clinical interpretations
-        are clear and actionable.
-        """
-    
     def execute(self, state: GraphState) -> GraphState:
-        """Format final response JSON and cleanup temporary files"""
+        """Format final response JSON using diagnosis_result directly"""
         
-        required = ["gait_metrics", "medical_diagnosis", "medical_diagnosis_metadata", "session_id"]
-        if not self.validate_state_requirements(state, required):
-            return StateManager.set_error(state, f"Missing required fields for response formatting: {required}", "validation_error")
+        # Check for new simplified structure
+        if "diagnosis_result" not in state:
+            return StateManager.set_error(state, "Missing diagnosis_result from RAG analysis", "validation_error")
         
-        gait_metrics = state["gait_metrics"]
-        diagnosis_result = state["medical_diagnosis"]
-        diagnosis_metadata = state["medical_diagnosis_metadata"]
-        session_id = state["session_id"]
-        date = state.get("date")
-        height_cm = state.get("height_cm")
+        diagnosis_result = state["diagnosis_result"]
+        session_id = state.get("session_id", "unknown")
         processing_time = state.get("processing_time", 0)
         
         try:
-            # Check if diagnosis is already in structured format
-            if isinstance(diagnosis_result, dict) and diagnosis_result.get("success") is not None:
-                # New structured JSON format - use as final response with enhancements
-                response_json = self._enhance_structured_response(diagnosis_result, state)
-            else:
-                # Legacy format - convert to structured format
-                response_json = self._create_fallback_response(state)
+            print("🔄 2-Stage RAG diagnosis_result 기반 응답 포맷팅...")
             
-            # Add technical metadata
-            response_json["metadata"] = response_json.get("metadata", {})
-            response_json["metadata"].update({
+            # Use diagnosis_result directly (already in perfect format from 2-Stage RAG)
+            response_json = diagnosis_result.copy()
+            
+            # Ensure required fields for API compatibility
+            if "userId" not in response_json:
+                response_json["userId"] = state.get("user_id", "unknown")
+            if "analyzedAt" not in response_json:
+                response_json["analyzedAt"] = datetime.now().isoformat()
+            
+            # Validate and normalize diseases probability format
+            diseases = response_json.get("diseases", [])
+            if diseases:
+                for disease in diseases:
+                    if "probability" in disease:
+                        prob = disease["probability"]
+                        # Ensure probability is in 0.0-1.0 range (not percentage)
+                        if prob > 1.0:
+                            disease["probability"] = prob / 100.0
+                        # Ensure required fields exist
+                        if "trend" not in disease:
+                            disease["trend"] = "stable"
+            
+            # Add comprehensive metadata
+            response_json["metadata"] = {
                 "session_id": session_id,
                 "processing_timestamp": datetime.now().isoformat(),
                 "processing_time_seconds": round(processing_time, 2),
-                "pipeline_version": "2.0.0",  # Updated version for new structured format
-                "nodes_executed": state.get("iterations", 0),
-                "api_version": "v2",
+                "pipeline_version": "5.0.0",  # 2-Stage RAG version
+                "api_version": "v5",
+                "rag_system": {
+                    "stage1_completed": state.get("stage1_indicators") is not None,
+                    "stage2_completed": "detailedReport" in diagnosis_result,
+                    "indicators_count": len(diagnosis_result.get("indicators", [])),
+                    "diseases_count": len(diseases)
+                },
                 "system_info": {
-                    "analysis_date": date,
-                    "patient_height_cm": height_cm,
-                    "temp_files_processed": self._count_temp_files(session_id),
+                    "analysis_date": state.get("date"),
+                    "patient_height_cm": state.get("height_cm"),
+                    "patient_gender": state.get("gender"),
                     "metrics_record_id": state.get("metrics_record_id"),
                     "diagnosis_record_id": state.get("diagnosis_record_id")
                 }
-            })
+            }
             
             # Cleanup temporary files
             cleanup_summary = self._cleanup_temp_files(session_id)
             response_json["metadata"]["cleanup_summary"] = cleanup_summary
             
-            # Update state with final response
+            # Update state with formatted response
             state["response"] = response_json
-            state["final_response"] = response_json  # Alternative key for compatibility
+            state["final_response"] = response_json  # For backward compatibility
             
-            self.logger.info(f"Response formatted successfully: {len(json.dumps(response_json))} characters")
+            # Success logging
+            indicators_count = len(response_json.get("indicators", []))
+            score = response_json.get("score", "N/A")
+            diseases_count = len(diseases)
+            
+            print(f"✅ 2-Stage RAG 응답 포맷팅 완료!")
+            print(f"   📊 Stage 1 지표: {indicators_count}개")
+            print(f"   📈 Stage 2 점수: {score}")
+            print(f"   🦠 질병 평가: {diseases_count}개")
+            print(f"   📄 응답 크기: {len(json.dumps(response_json, ensure_ascii=False)):,} 문자")
             
             return state
             
         except Exception as e:
             error_msg = f"Response formatting failed: {str(e)}"
-            self.logger.error(error_msg)
+            print(f"❌ 응답 포맷팅 실패: {error_msg}")
             return StateManager.set_error(state, error_msg, "formatting_error")
-    
-    def _enhance_structured_response(self, diagnosis_result: dict, state: GraphState) -> dict:
-        """Enhance RAG-based structured diagnosis response with validation and metadata"""
-        
-        # Make a copy to avoid modifying the original
-        enhanced_response = json.loads(json.dumps(diagnosis_result))
-        
-        # Validate and enhance RAG parsing results
-        if "data" in enhanced_response:
-            data = enhanced_response["data"]
-            
-            # Add session and processing info
-            data["sessionId"] = state["session_id"]
-            data["processingTime"] = state.get("processing_time", 0)
-            
-            # Validate RAG parsing quality
-            parsing_quality = self._validate_rag_parsing_quality(data)
-            data["ragParsingQuality"] = parsing_quality
-            
-            # Add gait metrics summary for reference
-            gait_metrics = state["gait_metrics"]
-            data["rawMetrics"] = {
-                "total_strides": gait_metrics.get("total_strides", 0),
-                "analysis_duration": f"{gait_metrics.get('total_strides', 0) * gait_metrics.get('avg_stride_time', 1.0):.1f}s",
-                "data_quality": self._assess_data_quality(gait_metrics)
-            }
-            
-            # Enhance indicators with additional context and validation
-            if "indicators" in data:
-                validated_indicators = []
-                for indicator in data["indicators"]:
-                    # Validate indicator structure
-                    validated_indicator = self._validate_and_enhance_indicator(indicator)
-                    validated_indicators.append(validated_indicator)
-                
-                data["indicators"] = validated_indicators
-                
-                # Re-validate consistency after enhancement
-                self._validate_indicators_consistency(data["indicators"], data.get("score", 75))
-            
-            # Enhanced detailed report validation
-            if "detailedReport" in data:
-                data["detailedReport"] = self._validate_and_enhance_detailed_report(
-                    data["detailedReport"], 
-                    state.get("medical_diagnosis_metadata", {})
-                )
-            
-            # Apply regex parsing enhancements
-            data = self._apply_regex_parsing_enhancements(data)
-            
-            # Add RAG-specific summary statistics
-            data["summary"] = {
-                "overall_assessment": data.get("status", "Unknown"),
-                "risk_factors_count": self._count_risk_factors(data.get("indicators", [])),
-                "normal_indicators_count": self._count_normal_indicators(data.get("indicators", [])),
-                "recommendation_level": self._get_recommendation_level(data.get("riskLevel", "확인 필요")),
-                "rag_confidence": data.get("detailedReport", {}).get("confidence", "보통"),
-                "source_documents_count": len(data.get("detailedReport", {}).get("sourceDocuments", [])),
-                "medical_literature_based": True,
-                "parsing_enhancements_applied": True
-            }
-        
-        return enhanced_response
-    
-    def _validate_rag_parsing_quality(self, data: dict) -> dict:
-        """Validate the quality of RAG response parsing"""
-        
-        quality_metrics = {
-            "indicators_parsed": len(data.get("indicators", [])),
-            "diseases_parsed": len(data.get("diseases", [])),
-            "score_extracted": data.get("score") is not None,
-            "status_extracted": bool(data.get("status")),
-            "risk_level_extracted": bool(data.get("riskLevel")),
-            "detailed_report_complete": bool(data.get("detailedReport", {}).get("content")),
-            "confidence_available": bool(data.get("detailedReport", {}).get("confidence")),
-            "source_documents_available": len(data.get("detailedReport", {}).get("sourceDocuments", [])) > 0
-        }
-        
-        # Calculate overall parsing quality score
-        total_checks = len(quality_metrics)
-        passed_checks = sum(1 for v in quality_metrics.values() if v)
-        quality_score = (passed_checks / total_checks) * 100
-        
-        quality_level = "excellent" if quality_score >= 90 else "good" if quality_score >= 70 else "needs_improvement"
-        
-        return {
-            "score": round(quality_score, 1),
-            "level": quality_level,
-            "metrics": quality_metrics,
-            "recommendations": self._get_parsing_recommendations(quality_metrics)
-        }
-    
-    def _validate_and_enhance_indicator(self, indicator: dict) -> dict:
-        """Validate and enhance individual indicator from RAG parsing"""
-        
-        enhanced_indicator = indicator.copy()
-        
-        # Ensure required fields
-        required_fields = ["id", "name", "value", "status"]
-        for field in required_fields:
-            if field not in enhanced_indicator:
-                enhanced_indicator[field] = "N/A"
-                self.logger.warning(f"Missing required field '{field}' in indicator, set to N/A")
-        
-        # Standardize status values
-        status = enhanced_indicator.get("status", "").lower()
-        if "정상" in status or "normal" in status:
-            enhanced_indicator["status"] = "normal"
-        elif "주의" in status or "warning" in status:
-            enhanced_indicator["status"] = "warning"
-        elif "위험" in status or "danger" in status:
-            enhanced_indicator["status"] = "danger"
-        else:
-            enhanced_indicator["status"] = "normal"  # Default to normal
-        
-        # Add category and priority
-        enhanced_indicator["category"] = self._get_indicator_category(enhanced_indicator["id"])
-        enhanced_indicator["priority"] = self._get_indicator_priority(enhanced_indicator["status"])
-        
-        # Validate and enhance description
-        if not enhanced_indicator.get("description"):
-            enhanced_indicator["description"] = self._get_default_description(enhanced_indicator["id"])
-        
-        # Validate and enhance result
-        if not enhanced_indicator.get("result"):
-            status_text = {"normal": "정상", "warning": "주의", "danger": "위험"}[enhanced_indicator["status"]]
-            enhanced_indicator["result"] = f"RAG 분석 결과 {status_text}입니다!"
-        
-        return enhanced_indicator
-    
-    def _validate_indicators_consistency(self, indicators: list, overall_score: int):
-        """Validate consistency between indicators and overall score"""
-        
-        if not indicators:
-            return
-        
-        # Calculate expected score from indicators
-        normal_count = sum(1 for ind in indicators if ind.get("status") == "normal")
-        warning_count = sum(1 for ind in indicators if ind.get("status") == "warning")
-        danger_count = sum(1 for ind in indicators if ind.get("status") == "danger")
-        
-        total_indicators = len(indicators)
-        expected_score = (normal_count * 100 + warning_count * 70 + danger_count * 40) / total_indicators
-        
-        # Check for significant discrepancy
-        score_diff = abs(overall_score - expected_score)
-        if score_diff > 20:
-            self.logger.warning(f"Score inconsistency detected: overall={overall_score}, expected={expected_score:.1f}")
-    
-    def _validate_and_enhance_detailed_report(self, detailed_report: dict, diagnosis_metadata: dict) -> dict:
-        """Validate and enhance detailed report from RAG parsing"""
-        
-        enhanced_report = detailed_report.copy()
-        
-        # Ensure required fields
-        if not enhanced_report.get("title"):
-            enhanced_report["title"] = "RAG 기반 보행 분석 결과"
-        
-        if not enhanced_report.get("content"):
-            enhanced_report["content"] = "RAG 분석이 완료되었습니다."
-        
-        # Add RAG-specific metadata
-        enhanced_report["ragMetadata"] = {
-            "analysis_method": "RAG-based medical diagnosis",
-            "knowledge_base": "medical_literature_pdfs",
-            "retrieval_sources": diagnosis_metadata.get("retrieved_sources", 0),
-            "confidence_level": enhanced_report.get("confidence", "보통"),
-            "literature_based": True,
-            "analysis_timestamp": datetime.now().isoformat()
-        }
-        
-        # Validate source documents
-        source_docs = enhanced_report.get("sourceDocuments", [])
-        if source_docs:
-            enhanced_report["sourceDocuments"] = [
-                self._validate_source_document(doc) for doc in source_docs
-            ]
-        
-        return enhanced_report
-    
-    def _validate_source_document(self, doc: dict) -> dict:
-        """Validate and standardize source document format"""
-        
-        return {
-            "번호": doc.get("번호", "N/A"),
-            "파일명": doc.get("파일명", "unknown_source"),
-            "문서유형": doc.get("문서유형", "medical_literature"),
-            "페이지": doc.get("페이지", "N/A"),
-            "내용길이": doc.get("내용길이", 0),
-            "신뢰도": "high"  # Medical literature is high reliability
-        }
-    
-    def _get_parsing_recommendations(self, quality_metrics: dict) -> list:
-        """Get recommendations for improving parsing quality"""
-        
-        recommendations = []
-        
-        if not quality_metrics.get("score_extracted"):
-            recommendations.append("점수 추출 로직 개선 필요")
-        
-        if not quality_metrics.get("confidence_available"):
-            recommendations.append("신뢰도 정보 추출 강화 필요")
-        
-        if quality_metrics.get("indicators_parsed", 0) < 3:
-            recommendations.append("지표 파싱 개수 증가 필요")
-        
-        if not quality_metrics.get("source_documents_available"):
-            recommendations.append("출처 문서 정보 보강 필요")
-        
-        return recommendations if recommendations else ["파싱 품질 양호"]
-    
-    def _get_default_description(self, indicator_id: str) -> str:
-        """Get default description for indicator"""
-        
-        descriptions = {
-            "stride-time": "한쪽 발이 땅에 닿은 후 같은 발이 다시 닿을 때까지의 시간",
-            "double-support": "두 발이 동시에 땅에 닿아 있는 시간의 비율",
-            "stride-difference": "왼발과 오른발의 걸음 길이 차이",
-            "walking-speed": "단위 시간 동안 이동한 거리",
-            "stance-phase": "보행 주기 중 발이 땅에 닿아 있는 시간의 비율"
-        }
-        
-        return descriptions.get(indicator_id, "보행 분석 지표")
-    
-    def _apply_regex_parsing_enhancements(self, data: dict) -> dict:
-        """Apply enhanced regex-based parsing for better structure extraction"""
-        
-        import re
-        
-        enhanced_data = data.copy()
-        
-        # Enhanced score extraction with multiple patterns
-        if "detailedReport" in enhanced_data and "content" in enhanced_data["detailedReport"]:
-            content = enhanced_data["detailedReport"]["content"]
-            
-            # Try multiple score extraction patterns
-            score_patterns = [
-                r'종합\s*점수[:\s]*(\d+)',
-                r'점수[:\s]*(\d+)',
-                r'Score[:\s]*(\d+)',
-                r'전체\s*점수[:\s]*(\d+)',
-                r'(\d+)\s*점'
-            ]
-            
-            extracted_score = None
-            for pattern in score_patterns:
-                match = re.search(pattern, content, re.IGNORECASE)
-                if match:
-                    extracted_score = int(match.group(1))
-                    if 0 <= extracted_score <= 100:
-                        break
-            
-            if extracted_score and abs(extracted_score - enhanced_data.get("score", 75)) > 10:
-                self.logger.info(f"Regex score extraction: {extracted_score} vs original {enhanced_data.get('score')}")
-                enhanced_data["score"] = extracted_score
-        
-        # Enhanced status extraction
-        status_patterns = {
-            "정상": ["정상", "안정", "양호", "normal", "stable"],
-            "주의": ["주의", "경고", "warning", "caution"],
-            "위험": ["위험", "심각", "danger", "critical"]
-        }
-        
-        if enhanced_data.get("detailedReport", {}).get("content"):
-            content_lower = enhanced_data["detailedReport"]["content"].lower()
-            
-            for status_key, keywords in status_patterns.items():
-                for keyword in keywords:
-                    if keyword in content_lower:
-                        current_status = enhanced_data.get("status", "")
-                        if status_key not in current_status:
-                            enhanced_data["status"] = f"보행 {status_key} 범위"
-                        break
-        
-        return enhanced_data
-    
-    def _create_fallback_response(self, state: GraphState) -> Dict[str, Any]:
-        """Create a structured response for legacy diagnosis format"""
-        
-        gait_metrics = state["gait_metrics"]
-        diagnosis_text = state["medical_diagnosis"]
-        diagnosis_metadata = state["medical_diagnosis_metadata"]
-        
-        # Convert legacy text diagnosis to new structured format
-        indicators = self._convert_metrics_to_indicators(gait_metrics)
-        diseases = self._extract_diseases_from_text(diagnosis_text)
-        
-        # Calculate overall score based on indicators
-        overall_score = self._calculate_fallback_score(indicators)
-        status = self._get_status_from_score(overall_score)
-        risk_level = self._get_risk_level_from_score(overall_score)
-        
-        return {
-            "success": True,
-            "data": {
-                "indicators": indicators,
-                "diseases": diseases,
-                "score": overall_score,
-                "status": status,
-                "riskLevel": risk_level,
-                "detailedReport": {
-                    "summary": f"전체적인 보행 분석 결과는 {status}입니다.",
-                    "keyFindings": self._extract_key_findings(gait_metrics),
-                    "recommendations": [
-                        "의료진과 상담하여 정확한 진단을 받으시기 바랍니다.",
-                        "정기적인 보행 모니터링을 권장합니다.",
-                        "운동 치료나 재활 프로그램을 고려해보세요."
-                    ],
-                    "technicalDetails": {
-                        "rawDiagnosis": diagnosis_text,
-                        "sourcesReferenced": diagnosis_metadata.get("retrieved_sources", 0),
-                        "knowledgeBase": diagnosis_metadata.get("knowledge_base_used", "medical_pdfs")
-                    }
-                }
-            }
-        }
-    
-    def _convert_metrics_to_indicators(self, gait_metrics: dict) -> list:
-        """Convert gait metrics to structured indicators format"""
-        indicators = []
-        
-        # Stride time indicator
-        avg_stride_time = gait_metrics.get("avg_stride_time", 1.0)
-        stride_time_status = "정상" if 0.9 <= avg_stride_time <= 1.3 else "주의" if 0.7 <= avg_stride_time < 1.5 else "위험"
-        indicators.append({
-            "id": "stride-time",
-            "name": "보행 주기",
-            "value": f"{avg_stride_time:.2f}초",
-            "status": stride_time_status,
-            "description": "한 발의 접촉부터 다음 같은 발의 접촉까지의 시간"
-        })
-        
-        # Double support indicator  
-        double_support_time = gait_metrics.get("avg_double_support_time", 0.2)
-        double_support_status = "정상" if double_support_time <= 0.25 else "주의" if double_support_time <= 0.35 else "위험"
-        indicators.append({
-            "id": "double-support",
-            "name": "양발 지지기",
-            "value": f"{double_support_time:.2f}초",
-            "status": double_support_status,
-            "description": "양발이 모두 지면에 접촉하는 시간"
-        })
-        
-        # Stride difference indicator
-        stride_asymmetry = gait_metrics.get("stride_length_asymmetry", 0)
-        stride_diff_status = "정상" if stride_asymmetry < 5 else "주의" if stride_asymmetry < 10 else "위험"
-        indicators.append({
-            "id": "stride-difference", 
-            "name": "보폭 차이",
-            "value": f"{stride_asymmetry:.1f}%",
-            "status": stride_diff_status,
-            "description": "좌우 보폭의 비대칭성"
-        })
-        
-        # Walking speed indicator
-        walking_speed = gait_metrics.get("avg_walking_speed", 1.0)
-        speed_status = "정상" if walking_speed >= 1.0 else "주의" if walking_speed >= 0.8 else "위험"
-        indicators.append({
-            "id": "walking-speed",
-            "name": "보행 속도", 
-            "value": f"{walking_speed:.2f}m/s",
-            "status": speed_status,
-            "description": "평균 보행 속도"
-        })
-        
-        return indicators
-    
-    def _extract_diseases_from_text(self, diagnosis_text: str) -> list:
-        """Extract disease probabilities from text diagnosis"""
-        diseases = [
-            {"name": "파킨슨병", "probability": 30},
-            {"name": "뇌졸중", "probability": 25}
-        ]
-        
-        if diagnosis_text:
-            text_lower = diagnosis_text.lower()
-            # Simple keyword-based probability adjustment
-            if "파킨슨" in text_lower or "parkinson" in text_lower:
-                diseases[0]["probability"] = 65
-            if "뇌졸중" in text_lower or "stroke" in text_lower:
-                diseases[1]["probability"] = 60
-                
-        return diseases
-    
-    def _calculate_fallback_score(self, indicators: list) -> int:
-        """Calculate overall score from indicators"""
-        normal_count = sum(1 for ind in indicators if ind["status"] == "정상")
-        warning_count = sum(1 for ind in indicators if ind["status"] == "주의") 
-        danger_count = sum(1 for ind in indicators if ind["status"] == "위험")
-        
-        # Score calculation: normal=100, warning=70, danger=40
-        total_indicators = len(indicators)
-        if total_indicators == 0:
-            return 50
-            
-        score = (normal_count * 100 + warning_count * 70 + danger_count * 40) / total_indicators
-        return int(score)
-    
-    def _get_status_from_score(self, score: int) -> str:
-        """Get status from score"""
-        if score >= 80:
-            return "정상"
-        elif score >= 60:
-            return "주의 필요"
-        else:
-            return "위험"
-    
-    def _get_risk_level_from_score(self, score: int) -> str:
-        """Get risk level from score"""
-        if score >= 80:
-            return "정상 단계"
-        elif score >= 60:
-            return "주의 단계"
-        else:
-            return "위험 단계"
-    
-    def _assess_data_quality(self, gait_metrics: dict) -> str:
-        """Assess the quality of gait data"""
-        total_strides = gait_metrics.get("total_strides", 0)
-        
-        if total_strides >= 20:
-            return "High"
-        elif total_strides >= 10:
-            return "Medium"
-        else:
-            return "Low"
-    
-    def _get_indicator_category(self, indicator_id: str) -> str:
-        """Get category for indicator"""
-        categories = {
-            "stride-time": "temporal",
-            "double-support": "temporal", 
-            "stride-difference": "spatial",
-            "walking-speed": "kinematic"
-        }
-        return categories.get(indicator_id, "general")
-    
-    def _get_indicator_priority(self, status: str) -> str:
-        """Get priority level for indicator status"""
-        priorities = {
-            "정상": "low",
-            "주의": "medium",
-            "위험": "high"
-        }
-        return priorities.get(status, "medium")
-    
-    def _count_risk_factors(self, indicators: list) -> int:
-        """Count indicators with warning or danger status"""
-        return sum(1 for ind in indicators if ind.get("status") in ["주의", "위험"])
-    
-    def _count_normal_indicators(self, indicators: list) -> int:
-        """Count indicators with normal status"""
-        return sum(1 for ind in indicators if ind.get("status") == "정상")
-    
-    def _get_recommendation_level(self, risk_level: str) -> str:
-        """Get recommendation level based on risk level"""
-        if "정상" in risk_level:
-            return "routine"
-        elif "주의" in risk_level:
-            return "consultation"
-        else:
-            return "immediate"
-    
-    def _extract_key_findings(self, gait_metrics: Dict[str, Any]) -> list:
-        """Extract key findings from gait metrics"""
-        findings = []
-        
-        # Check walking speed
-        speed = gait_metrics.get("avg_walking_speed")
-        if speed and speed < 1.0:
-            findings.append(f"Reduced walking speed: {speed:.2f} m/s")
-        
-        # Check stride length
-        stride_length = gait_metrics.get("avg_stride_length")
-        if stride_length and stride_length < 1.2:
-            findings.append(f"Shortened stride length: {stride_length:.2f} m")
-        
-        # Check asymmetry
-        asymmetry = gait_metrics.get("stride_length_asymmetry")
-        if asymmetry and asymmetry > 5.0:
-            findings.append(f"Gait asymmetry detected: {asymmetry:.1f}%")
-        
-        # Check variability
-        variability = gait_metrics.get("stride_time_variability")
-        if variability and variability > 10.0:
-            findings.append(f"Increased gait variability: {variability:.1f}%")
-        
-        return findings if findings else ["Normal gait parameters within expected ranges"]
-    
-    def _count_temp_files(self, session_id: str) -> int:
-        """Count temporary files for this session"""
-        temp_dir = Path(os.getenv('TEMP_DIR', './temp_files'))
-        if not temp_dir.exists():
-            return 0
-        
-        # Count files containing session ID
-        count = 0
-        for file_path in temp_dir.glob("*"):
-            if file_path.is_file() and session_id in file_path.name:
-                count += 1
-        
-        return count
     
     def _cleanup_temp_files(self, session_id: str) -> Dict[str, Any]:
         """Clean up temporary files for this session"""

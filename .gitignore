@@ -6,6 +6,7 @@ env/
 ENV/
 env.bak/
 venv.bak/
+/myenv
 
 # Python 캐시 및 컴파일 파일
 __pycache__/
@@ -31,6 +32,8 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+/temp_files
+/chroma_db
 
 # PyInstaller
 *.manifest

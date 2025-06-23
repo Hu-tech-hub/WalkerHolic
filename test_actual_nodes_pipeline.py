@@ -325,9 +325,9 @@ def test_optimized_nodes_pipeline():
             if metrics_record_id:
                 print(f"   📊 Record ID: {metrics_record_id}")
         
-        # 9단계: 프롬프트 구성 (LLM 사용)
+        # 9단계: 프롬프트 구성 (LLM 제거됨 - 2-stage 시스템)
         print("\n" + "="*80)
-        print("9️⃣ STEP 9: ComposePromptNode - 진단 프롬프트 구성 (LLM 사용)")
+        print("9️⃣ STEP 9: ComposePromptNode - 2-Stage RAG 프롬프트 구성 (LLM 제거)")
         print("-" * 80)
         
         from langgraph_nodes.rag_diagnosis_nodes import ComposePromptNode
@@ -338,7 +338,7 @@ def test_optimized_nodes_pipeline():
             compose_prompt_node.invoke_llm = create_llm_tracker("ComposePromptNode")(compose_prompt_node.invoke_llm)
         
         step_start = time.time()
-        print("🔄 보행 지표 기반 진단 프롬프트 구성 중...")
+        print("🔄 Stage 1 + Stage 2 RAG 쿼리 구성 중...")
         current_state = compose_prompt_node.execute(current_state)
         step_time = time.time() - step_start
         
@@ -346,16 +346,18 @@ def test_optimized_nodes_pipeline():
             print(f"❌ 프롬프트 구성 실패: {current_state['error']}")
             return
         
-        diagnosis_prompt = current_state.get('diagnosis_prompt')
-        if diagnosis_prompt:
-            prompt_length = len(diagnosis_prompt)
-            print(f"✅ 프롬프트 구성 완료! ({step_time:.2f}초)")
-            print(f"📝 프롬프트 길이: {prompt_length:,} 문자")
-            print(f"🎯 포함 지표: {len(current_state.get('gait_metrics', {}))}개")
+        rag_query_stage1 = current_state.get('rag_query_stage1')
+        rag_query_stage2_template = current_state.get('rag_query_stage2_template')
         
-        # 10단계: RAG 기반 진단 (LLM 사용)
+        if rag_query_stage1 and rag_query_stage2_template:
+            print(f"✅ 2-Stage RAG 쿼리 구성 완료! ({step_time:.2f}초)")
+            print(f"📝 Stage 1 쿼리 길이: {len(rag_query_stage1):,} 문자")
+            print(f"📝 Stage 2 템플릿 길이: {len(rag_query_stage2_template):,} 문자")
+            print(f"🎯 환자 정보: {current_state.get('patient_info', {}).get('user_id', 'N/A')}")
+        
+        # 10단계: 2-Stage RAG 기반 진단 (LLM 사용)
         print("\n" + "="*80)
-        print("🔟 STEP 10: RagDiagnosisNode - RAG 기반 의료 진단 (LLM 사용)")
+        print("🔟 STEP 10: RagDiagnosisNode - 2-Stage RAG 진단 (LLM 사용)")
         print("-" * 80)
         
         from langgraph_nodes.rag_diagnosis_nodes import RagDiagnosisNode
@@ -366,29 +368,50 @@ def test_optimized_nodes_pipeline():
             rag_diagnosis_node.invoke_llm = create_llm_tracker("RagDiagnosisNode")(rag_diagnosis_node.invoke_llm)
         
         step_start = time.time()
-        print("🔄 ChromaDB 검색 + LLM 진단 생성 중...")
+        print("🔄 Stage 1: 개별 지표 분석 + Stage 2: 종합 진단 실행 중...")
         current_state = rag_diagnosis_node.execute(current_state)
         step_time = time.time() - step_start
         
         if current_state.get('error'):
-            print(f"❌ RAG 진단 실패: {current_state['error']}")
+            print(f"❌ 2-Stage RAG 진단 실패: {current_state['error']}")
             return
         
+        # 새로운 diagnosis_result 구조 확인
         diagnosis_result = current_state.get('diagnosis_result')
-        retrieved_docs = current_state.get('retrieved_documents', [])
+        stage1_indicators = current_state.get('stage1_indicators', [])
         
         if diagnosis_result:
-            print(f"✅ RAG 진단 완료! ({step_time:.2f}초)")
-            print(f"📚 검색된 문서: {len(retrieved_docs)}개")
-            print(f"🔍 진단 결과 길이: {len(diagnosis_result):,} 문자")
+            print(f"✅ 2-Stage RAG 진단 완료! ({step_time:.2f}초)")
+            
+            # Stage 1 결과 확인
+            indicators = diagnosis_result.get('indicators', [])
+            print(f"📊 Stage 1 개별 지표 분석: {len(indicators)}개")
+            if indicators:
+                normal_count = sum(1 for ind in indicators if ind.get('status') == 'normal')
+                warning_count = len(indicators) - normal_count
+                print(f"   ✅ 정상: {normal_count}개, ⚠️ 주의: {warning_count}개")
+            
+            # Stage 2 결과 확인
+            score = diagnosis_result.get('score', 0)
+            status = diagnosis_result.get('status', 'N/A')
+            risk_level = diagnosis_result.get('riskLevel', 'N/A')
+            diseases = diagnosis_result.get('diseases', [])
+            detailed_report = diagnosis_result.get('detailedReport', {})
+            
+            print(f"🏥 Stage 2 종합 진단:")
+            print(f"   📈 점수: {score}")
+            print(f"   📋 상태: {status}")
+            print(f"   ⚠️ 위험도: {risk_level}")
+            print(f"   🦠 질병 평가: {len(diseases)}개")
+            print(f"   📄 상세 리포트: {len(detailed_report.get('content', ''))}자")
             
             # 진단 결과 미리보기
-            preview = diagnosis_result[:200] + "..." if len(diagnosis_result) > 200 else diagnosis_result
-            print(f"👨‍⚕️ 진단 미리보기: {preview}")
+            if detailed_report.get('title'):
+                print(f"   📌 리포트 제목: {detailed_report['title']}")
         
-        # 11단계: 진단 결과 저장 (LLM 사용)
+        # 11단계: 진단 결과 저장 (LLM 제거됨)
         print("\n" + "="*80)
-        print("1️⃣1️⃣ STEP 11: StoreDiagnosisNode - 진단 결과 저장 (LLM 사용)")
+        print("1️⃣1️⃣ STEP 11: StoreDiagnosisNode - 진단 결과 저장 (LLM 제거)")
         print("-" * 80)
         
         from langgraph_nodes.rag_diagnosis_nodes import StoreDiagnosisNode
@@ -399,7 +422,7 @@ def test_optimized_nodes_pipeline():
             store_diagnosis_node.invoke_llm = create_llm_tracker("StoreDiagnosisNode")(store_diagnosis_node.invoke_llm)
         
         step_start = time.time()
-        print("🔄 Supabase에 진단 결과 저장 중...")
+        print("🔄 Supabase에 diagnosis_result 저장 중...")
         current_state = store_diagnosis_node.execute(current_state)
         step_time = time.time() - step_start
         
@@ -411,10 +434,15 @@ def test_optimized_nodes_pipeline():
             print(f"✅ 진단 결과 저장 성공! ({step_time:.2f}초)")
             if diagnosis_record_id:
                 print(f"   🏥 Record ID: {diagnosis_record_id}")
+            
+            # 신뢰도 점수 확인
+            if diagnosis_result:
+                confidence_score = store_diagnosis_node._calculate_confidence_score(diagnosis_result)
+                print(f"   📊 계산된 신뢰도: {confidence_score:.3f}")
         
-        # 12단계: 최종 응답 포맷팅 (LLM 사용)
+        # 12단계: 최종 응답 포맷팅 (LLM 제거됨)
         print("\n" + "="*80)
-        print("1️⃣2️⃣ STEP 12: FormatResponseNode - 최종 응답 생성 (LLM 사용)")
+        print("1️⃣2️⃣ STEP 12: FormatResponseNode - 최종 응답 생성 (LLM 제거)")
         print("-" * 80)
         
         from langgraph_nodes.response_nodes import FormatResponseNode
@@ -425,7 +453,7 @@ def test_optimized_nodes_pipeline():
             format_response_node.invoke_llm = create_llm_tracker("FormatResponseNode")(format_response_node.invoke_llm)
         
         step_start = time.time()
-        print("🔄 사용자 친화적 최종 응답 생성 중...")
+        print("🔄 diagnosis_result 기반 최종 응답 생성 중...")
         current_state = format_response_node.execute(current_state)
         step_time = time.time() - step_start
         
@@ -433,28 +461,32 @@ def test_optimized_nodes_pipeline():
             print(f"❌ 응답 포맷팅 실패: {current_state['error']}")
             return
         
-        final_response = current_state.get('final_response')
+        final_response = current_state.get('response')
         if final_response:
-            response_length = len(final_response)
+            response_length = len(json.dumps(final_response, ensure_ascii=False))
             print(f"✅ 최종 응답 생성 완료! ({step_time:.2f}초)")
             print(f"📄 응답 길이: {response_length:,} 문자")
             
-            # 최종 응답 미리보기
-            preview = final_response[:300] + "..." if len(final_response) > 300 else final_response
-            print(f"📋 응답 미리보기:\n{preview}")
+            # 최종 응답 구조 확인
+            if isinstance(final_response, dict):
+                print(f"📋 최종 응답 구조:")
+                print(f"   - indicators: {len(final_response.get('indicators', []))}개")
+                print(f"   - score: {final_response.get('score', 'N/A')}")
+                print(f"   - diseases: {len(final_response.get('diseases', []))}개")
+                print(f"   - metadata: {'있음' if 'metadata' in final_response else '없음'}")
         
         total_time = time.time() - pipeline_start_time
         
         # 최종 결과 요약
         print("\n" + "="*80)
-        print("🎉 완전한 End-to-End LangGraph 파이프라인 완료!")
+        print("🎉 완전한 End-to-End 2-Stage RAG 파이프라인 완료!")
         print("="*80)
         
         print(f"📊 파이프라인 성과:")
         print(f"   🚀 총 LLM 호출: {llm_call_count}회")
         print(f"   ⏱️ 총 처리 시간: {total_time:.2f}초")
-        print(f"   🎯 최적화 구조: 8/12 노드 LLM 제거 (67% 최적화)")
-        print(f"   💡 하이브리드 아키텍처: 데이터 처리는 순수 Python, 진단은 LLM")
+        print(f"   🎯 최적화 구조: 10/12 노드 LLM 제거 (83% 최적화)")
+        print(f"   💡 2-Stage RAG: Stage 1(지표별) + Stage 2(종합진단)")
         
         print(f"\n📈 전체 12단계 처리 요약:")
         print(f"   1️⃣ 입력 검증: ✅ LLM 제거 (순수 Python)")
@@ -465,43 +497,34 @@ def test_optimized_nodes_pipeline():
         print(f"   6️⃣ 보폭/속도 예측: ✅ LLM 제거 (딥러닝)")
         print(f"   7️⃣ 지표 계산: ✅ LLM 제거 (순수 Python)")
         print(f"   8️⃣ 지표 저장: ✅ LLM 제거 (Database API)")
-        print(f"   9️⃣ 프롬프트 구성: 🤖 LLM 사용 (진단 준비)")
-        print(f"   🔟 RAG 진단: 🤖 LLM 사용 (의료 진단)")
-        print(f"   1️⃣1️⃣ 진단 저장: 🤖 LLM 사용 (구조화)")
-        print(f"   1️⃣2️⃣ 응답 생성: 🤖 LLM 사용 (사용자 친화적)")
+        print(f"   9️⃣ RAG 쿼리 구성: ✅ LLM 제거 (2-stage 템플릿)")
+        print(f"   🔟 2-Stage RAG 진단: 🤖 LLM 사용 (Stage 1+2)")
+        print(f"   1️⃣1️⃣ 진단 저장: ✅ LLM 제거 (Database API)")
+        print(f"   1️⃣2️⃣ 응답 생성: ✅ LLM 제거 (구조 복사)")
         
-        print(f"\n💾 생성된 파일들:")
-        print(f"   📥 다운로드: {current_state.get('raw_csv_path', 'N/A')}")
-        print(f"   🔧 필터링: {current_state.get('filtered_csv_path', 'N/A')}")
-        print(f"   🤖 보행단계: {current_state.get('labels_csv_path', 'N/A')}")
-        
-        print(f"\n🗄️ 저장된 데이터:")
-        if current_state.get('metrics_record_id'):
-            print(f"   📊 보행 지표: Record ID {current_state.get('metrics_record_id')}")
-        if current_state.get('diagnosis_record_id'):
-            print(f"   🏥 진단 결과: Record ID {current_state.get('diagnosis_record_id')}")
-        
-        # 시스템 아키텍처 분석
-        print(f"\n🏗️ 하이브리드 아키텍처 분석:")
-        print(f"   📊 입력 시스템: (user_id, height_cm, gender)")
-        print(f"   🗄️ 데이터 소스: Supabase Storage (CSV 파일)")
-        print(f"   🤖 데이터 처리: 순수 Python + 딥러닝 (LLM 없음)")
-        print(f"   🧠 의료 진단: RAG + LLM (ChromaDB + 의료 문헌)")
-        print(f"   ⚡ 성능: 데이터 처리 즉시 실행, 진단만 LLM 대기")
+        # 2-Stage RAG 시스템 분석
+        print(f"\n🧠 2-Stage RAG 시스템 분석:")
+        if diagnosis_result:
+            indicators = diagnosis_result.get('indicators', [])
+            diseases = diagnosis_result.get('diseases', [])
+            print(f"   📊 Stage 1: {len(indicators)}개 개별 지표 분석")
+            print(f"   🏥 Stage 2: {len(diseases)}개 질병 위험도 + 종합 소견")
+            print(f"   📈 최종 점수: {diagnosis_result.get('score', 'N/A')}")
+            print(f"   ⚠️ 위험도: {diagnosis_result.get('riskLevel', 'N/A')}")
         
         # 최종 성과 평가
-        if llm_call_count <= 4:  # 예상되는 LLM 호출 (진단 관련 4개 노드)
-            print(f"\n🎉 End-to-End 파이프라인 성공!")
+        if llm_call_count <= 2:  # 예상되는 LLM 호출 (Stage 1 + Stage 2만)
+            print(f"\n🎉 2-Stage RAG 파이프라인 성공!")
             print(f"   ✅ 전체 12단계 완료")
-            print(f"   ✅ 67% 최적화 달성 (8/12 노드 LLM 제거)")
-            print(f"   ✅ 하이브리드 아키텍처 구현")
-            print(f"   ✅ 의료진단 품질 유지 + 데이터 처리 성능 향상")
+            print(f"   ✅ 83% 최적화 달성 (10/12 노드 LLM 제거)")
+            print(f"   ✅ 2-Stage RAG 아키텍처 구현")
+            print(f"   ✅ 개별 지표 + 종합 진단 분리")
             
-            if current_state.get('final_response'):
+            if current_state.get('response'):
                 print(f"   ✅ 최종 사용자 응답 생성 완료")
         else:
             print(f"\n⚠️  예상보다 많은 LLM 호출 발견 ({llm_call_count}회)")
-            print(f"   예상: 4회 (진단 관련 노드들만)")
+            print(f"   예상: 2회 (Stage 1 + Stage 2만)")
             print(f"   실제: {llm_call_count}회")
             print(f"   추가 최적화가 필요할 수 있습니다")
         
