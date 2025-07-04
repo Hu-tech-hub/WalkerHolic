@@ -52,9 +52,14 @@ class ReceiveRequestNode(BaseNode):
         if len(user_id) < 3 or len(user_id) > 50:
             return StateManager.set_error(state, "user_id must be 3-50 characters long", "validation_error")
         
-        # user_id는 알파벳, 숫자, 하이픈, 언더스코어만 허용
-        if not re.match(r'^[a-zA-Z0-9_-]+$', user_id):
-            return StateManager.set_error(state, "user_id can only contain letters, numbers, hyphens, and underscores", "validation_error")
+        # user_id는 알파벳, 숫자, 하이픈, 언더스코어, 한글 허용
+        allowed_chars = True
+        for char in user_id:
+            if not (char.isalnum() or char in '_-' or '\uac00' <= char <= '\ud7a3'):
+                allowed_chars = False
+                break
+        if not allowed_chars:
+            return StateManager.set_error(state, "user_id can only contain letters, numbers, hyphens, underscores, and Korean characters", "validation_error")
         
         # 2. height_cm 검증
         if not isinstance(height_cm, (int, float)):
