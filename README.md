@@ -13,9 +13,6 @@ WalkerHolic is an AI-powered healthcare application that diagnoses health condit
 
 ## 비주얼/스크린샷 (Visuals/Screenshots)
 
-여기에 프로젝트의 주요 화면 스크린샷이나 포스터 이미지를 추가할 수 있습니다.
-You can add screenshots of key project screens or the poster image here.
-
 ![프로젝트 포스터](001.png)
 
 ## 시스템 아키텍처 (System Architecture)
