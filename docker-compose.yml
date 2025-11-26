@@ -1,0 +1,63 @@
+# version: '3.8'
+
+services:
+  walkerholic-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: walkerholic-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # ChromaDB 데이터 영속성
+      - ./chroma_db:/app/chroma_db
+      # 모델 파일 영속성
+      - ./models_2:/app/models_2
+      # 메타데이터 영속성
+      - ./metadata:/app/metadata
+      # 임시 파일
+      - ./temp_files:/app/temp_files
+    environment:
+      # .env 파일에서 로드되거나 여기서 직접 설정
+      - PYTHONUNBUFFERED=1
+      - TEMP_DIR=/app/temp_files
+      - PROJECT_ROOT=/app
+      - LOG_LEVEL=INFO
+      # 아래 환경 변수들은 .env 파일에서 로드하거나 직접 설정하세요
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # - SUPABASE_URL=${SUPABASE_URL}
+      # - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      # - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      # - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE:-0.1}
+    env_file:
+      - .env  # .env 파일이 있으면 자동으로 로드
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  walkerholic-frontend:
+    build:
+      context: ./front
+      dockerfile: Dockerfile
+    container_name: walkerholic-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      # 소스 코드 변경 시 자동 반영 (개발 모드)
+      - ./front/src:/app/src
+      - ./front/public:/app/public
+      - ./front/index.html:/app/index.html
+      # node_modules는 볼륨에서 제외 (컨테이너 내부 사용)
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+      # 프론트엔드 환경 변수는 .env 파일에서 로드
+    env_file:
+      - ./front/.env  # 프론트엔드 .env 파일 (선택사항)
+    depends_on:
+      - walkerholic-backend
+    restart: unless-stopped
+

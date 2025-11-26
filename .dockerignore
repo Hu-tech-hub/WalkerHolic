@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 환경 변수
+.env
+.env.local
+.env.*.local
+
+# 로그
+*.log
+logs/
+
+# 테스트
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 프론트엔드 (백엔드만 빌드)
+front/
+
+# 임시 파일
+temp_files/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 문서
+docs/
+README.md
+*.md
+

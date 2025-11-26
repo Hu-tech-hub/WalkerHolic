@@ -1,0 +1,39 @@
+# FastAPI 웹 프레임워크
+fastapi==0.115.9
+uvicorn==0.34.3
+starlette==0.45.3
+pydantic==2.11.7
+pydantic-settings==2.9.1
+
+# LangChain & LangGraph
+langchain==0.3.25
+langchain-core==0.3.65
+langchain-openai==0.3.23
+langchain-chroma==0.2.4
+langchain-community==0.3.25
+langchain-text-splitters==0.3.8
+langgraph==0.4.8
+langgraph-checkpoint==2.0.26
+langsmith==0.3.45
+
+# AI/ML 모델
+openai==1.86.0
+tensorflow==2.18.1
+keras==3.10.0
+torch==2.7.1
+transformers==4.52.4
+sentence-transformers==4.1.0
+
+# 데이터베이스
+chromadb==1.0.12
+supabase==2.15.3
+
+# 데이터 처리
+pandas==2.2.2
+numpy==2.0.2
+scikit-learn==1.6.1
+
+# 유틸리티
+python-dotenv==1.1.0
+requests==2.32.4
+tiktoken==0.9.0
